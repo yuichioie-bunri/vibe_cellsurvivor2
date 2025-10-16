@@ -1,0 +1,147 @@
+:root {
+  --bg: #0b1020;
+  --fg: #e6f0ff;
+  --accent: #6be0ff;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP";
+  background: linear-gradient(180deg, #06080f 0%, #0b1020 100%);
+  color: var(--fg);
+}
+
+#gameWrap {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+canvas {
+  background: transparent;
+  display: block;
+  max-width: 100%;
+  height: 100vh;
+}
+
+/* UI */
+.ui {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.04);
+  padding: 8px 12px;
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  font-size: 14px;
+}
+
+.centerUI {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 12px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.bottomUI {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 18px;
+  display: flex;
+  gap: 8px;
+}
+
+button {
+  background: var(--accent);
+  border: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  color: #012;
+}
+
+.hint {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 6px;
+}
+
+@media (max-width: 600px) {
+  .panel {
+    font-size: 13px;
+  }
+}
+
+/* ===== ゲーム終了フェード用オーバーレイ ===== */
+#gameOverOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.8);
+  color: white;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1.5s ease;
+}
+
+#gameOverOverlay.show {
+  opacity: 1;
+  pointer-events: all;
+}
+
+#gameOverText {
+  font-size: 48px;
+  margin-bottom: 20px;
+  opacity: 0;
+  transition: opacity 2s ease;
+}
+
+#gameOverText.visible {
+  opacity: 1;
+}
+
+#finalScoreText {
+  font-size: 32px;
+  margin-top: 10px;
+  opacity: 0;
+  transition: opacity 2s ease;
+}
+
+#finalScoreText.visible {
+  opacity: 1;
+}
+
+#btnMainMenu {
+  margin-top: 30px;
+  padding: 10px 24px;
+  font-size: 20px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 2s ease;
+}
+
+#btnMainMenu.visible {
+  opacity: 1;
+}
