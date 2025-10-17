@@ -7,15 +7,25 @@ const CONFIG = {
   playerSpeed: 600,
   playerWidth: 80,
   playerHeight: 24,
+  // プレイヤーのY位置系
+  playerYFromBottom: 60,        // プレイヤー矩形の下端からのオフセット(px)
+  fireOffsetFromBottom: 120,    // 発射位置の下端からのオフセット(px)
+
   bulletSpeed: 1400,
   bulletCooldown: 0.18,
   bulletGravity: 2200,          // 放物線弾の重力（px/s^2）
+  // 弾の見た目
+  bulletW: 8,
+  bulletH: 10,
+  bulletTrailExtra: 6,
+  bulletTrailHeight: 4,
 
   enemySpawnInterval: 0.9,
   enemySpeedMin: 140,
   enemySpeedMax: 420,
   enemySizeBase: 80,
   enemyDepthMin: 0.2,
+  
   enemyDepthMax: 1.6,
   maxLives: 3,
   maxEnemies: 8,
@@ -30,6 +40,8 @@ const CONFIG = {
 
   enemyHorizontalRange: 120,    // 左右移動範囲(px)
   enemyRespawnDelay: 1.0,       // 復活までの時間（秒）
+  enemyFadeInRate: 2.0,         // 復活時のフェードイン速度(α/秒)
+  particleGravity: 800,         // 爆発パーティクルの重力
 
   gameDuration: 30,             // ゲームの制限時間（秒）
 
@@ -37,6 +49,12 @@ const CONFIG = {
   bgBottomColor: "#003366",     // 背景グラデーション下部（紺色）
 
   localStorageKey: 'my_3d_shooter_highscore_v1',
+
+  // ===== ランキング設定 =====
+  maxRanking: 5,                 // ランキング上位5名まで
+  rankFont: "20px sans-serif",   // ランキング表示フォント
+  rankColor: "#fff",             // ランキング文字色
+  newRecordColor: "#ffd700",      // 新記録時のハイライトカラー（金色）
 
   // ===== ペナルティ敵設定 =====
   penaltyEnemyChance: 1 / 7,   // ペナルティ的が出る確率（1/20）
@@ -46,7 +64,38 @@ const CONFIG = {
   // ===== ペナルティ敵スコア表示設定 =====
   penaltyTextColor: "#ff3300",    // 「-1000」表示の色
   penaltyTextDuration: 1.0,       // フェードアウトまでの時間（秒）
-  penaltyTextRise: 60             // 上に浮かび上がる距離(px)
+  penaltyTextRise: 60,             // 上に浮かび上がる距離(px)
+
+  // ===== タイマー関連 =====
+  timerDuration: 60,              // ゲーム全体の制限時間（秒）
+  timerBarHeight: 18,             // タイムバーの高さ(px)
+  timerBarColor: "#ff3333",       // タイムバーの基本色（赤）
+  timerBarMargin: 10,             // 画面下からのマージン(px)
+  timerWarningTime: 5,            // 点滅開始の残り秒数
+  timerFlashColor: "rgba(255,0,0,0.3)", // 点滅時の画面オーバーレイ色
+  timerTextFont: "bold 64px sans-serif", // 残り秒数のフォント設定
+  timerTextColor: "#ff3333",      // 残り秒数の文字色
+  timerFlashDuration: 1.0,
+  // === マイルストーン ===
+  milestones: [5000, 10000, 20000],     // 閾値
+  milestoneToastDuration: 1000,          // 表示時間(ms)
+
+  // ===== 照準マーカー =====
+  aimRadius: 14,
+  aimLineLen: 20,
+  aimStrokeWidth: 2,
+  aimAlpha: 0.9,
+
+  // ===== 敵スコア表示 =====
+  enemyScoreFont: "16px sans-serif",
+  enemyScoreOffset: 8,
+
+  // ===== チュートリアル =====
+  tutorialWidth: 400,
+  tutorialHeight: 300,
+  tutorialTargetRadius: 30,
+  tutorialHitFlashGrow: 10,
+  tutorialSuccessDelayMs: 1000
 };
 /* =========================
    基本設定
@@ -58,6 +107,23 @@ const highPanel = document.getElementById('highPanel');
 const statePanel = document.getElementById('statePanel');
 const btnRestart = document.getElementById('btnRestart');
 const btnMute = document.getElementById('btnMute');
+const milestoneEl = document.getElementById('milestoneToast');
+
+// === チュートリアル要素 ===
+const tutorialOverlay = document.getElementById("tutorialOverlay");
+const tutorialCanvas = document.getElementById("tutorialCanvas");
+const tctx = tutorialCanvas.getContext("2d");
+
+let tutorialActive = false;
+let tutorialTarget = { x: 200, y: 150, r: CONFIG.tutorialTargetRadius };
+let tutorialCleared = false;
+
+// ===== 敵画像を読み込み =====
+const enemyImage = new Image();
+enemyImage.src = "images/enemy_normal.png"; // ← 用意した敵画像のファイル名を指定（index.htmlと同じフォルダに置く）
+
+const penaltyImage = new Image();
+penaltyImage.src = "images/enemy_bug.png"; // ← ペナルティ敵用画像を別に用意した場合（なければenemy.pngでも可）
 
 // ゲーム終了フェード関連
 const overlay = document.getElementById('gameOverOverlay');
@@ -77,6 +143,32 @@ let gameState = {
   bullets: [], enemies: [],
   keys: {}, cooldown: 0, playing: false
 };
+
+// 次に狙うマイルストーンのインデックス
+let nextMilestoneIndex = 0;
+
+function showMilestoneToast(text){
+  if(!milestoneEl) return;
+  milestoneEl.textContent = text;
+  milestoneEl.classList.remove('hidden');
+  milestoneEl.classList.remove('show'); // 連続発火対策
+  // リフローしてから付け直すとアニメ再生される
+  void milestoneEl.offsetWidth;
+  milestoneEl.classList.add('show');
+  setTimeout(()=>{
+    milestoneEl.classList.remove('show');
+  }, CONFIG.milestoneToastDuration);
+}
+
+function checkMilestone(){
+  const thresholds = CONFIG.milestones;
+  if(nextMilestoneIndex >= thresholds.length) return;
+  if(gameState.score >= thresholds[nextMilestoneIndex]){
+    const v = thresholds[nextMilestoneIndex].toLocaleString();
+    showMilestoneToast(`${v} ポイント！`);
+    nextMilestoneIndex++;
+  }
+}
 
 /* =========================
    ユーティリティ
@@ -100,16 +192,44 @@ window.addEventListener('resize', fitCanvas);
    ========================= */
 function loadHigh() {
   const raw = localStorage.getItem(CONFIG.localStorageKey);
-  const val = raw ? parseInt(raw, 10) : 0;
-  gameState.high = isNaN(val) ? 0 : val;
+  let list = [];
+  try { list = raw ? JSON.parse(raw) : []; } catch { list = []; }
+  if (!Array.isArray(list)) list = [];
+  gameState.rankings = list;
+  gameState.high = list.length > 0 ? list[0].score : 0;
   highPanel.textContent = `High: ${gameState.high}`;
 }
 function saveHigh() {
-  if (gameState.score > gameState.high) {
-    gameState.high = gameState.score;
-    localStorage.setItem(CONFIG.localStorageKey, String(gameState.high));
+  let list;
+  try {
+    const raw = localStorage.getItem(CONFIG.localStorageKey);
+    list = raw ? JSON.parse(raw) : [];
+  } catch {
+    list = [];
+  }
+  if (!Array.isArray(list)) list = [];
+
+  // 現在スコアが新記録か判定
+  const lowestScore = list.length >= CONFIG.maxRanking ? list[list.length - 1].score : -Infinity;
+  const isNewRecord = gameState.score > lowestScore;
+
+  if (isNewRecord) {
+    const playerName = prompt("新記録！あなたの名前を入力してください:", "Player");
+    const entry = { name: playerName || "Unknown", score: gameState.score };
+    list.push(entry);
+    list.sort((a, b) => b.score - a.score);
+    if (list.length > CONFIG.maxRanking) list = list.slice(0, CONFIG.maxRanking);
+
+    // ローカルストレージに保存
+    localStorage.setItem(CONFIG.localStorageKey, JSON.stringify(list));
+
+    // メモリ上のランキングも即時更新
+    gameState.rankings = list;
+    gameState.high = list[0]?.score ?? gameState.score;
     highPanel.textContent = `High: ${gameState.high}`;
   }
+  // 保存後も必ず最新のランキングを読み直す
+  loadHigh();
 }
 
 /* =========================
@@ -120,16 +240,86 @@ function resetGame() {
   gameState.lives = CONFIG.maxLives;
   gameState.bullets = [];
   gameState.enemies = [];
+  gameState.enemyRows = []; // ← 追加：明示的に初期化
   gameState.playerX = CONFIG.canvasWidth / 2;
   gameState.cooldown = 0;
   accumSpawn = 0;
   lastTime = performance.now();
   loadHigh();
   updateUI();
+
+  // 敵をすぐに生成
+  spawnGalleryIfEmpty();
+  nextMilestoneIndex = 0;
 }
 
 function startGame() {
   resetGame();
+  // 最新のハイスコアとランキングを読み込む
+  loadHigh();
+  // メインゲームの代わりにまずチュートリアルを起動
+  launchTutorial();
+}
+
+/* =========================
+   チュートリアル処理
+   ========================= */
+function launchTutorial() {
+  tutorialActive = true;
+  tutorialCleared = false;
+  tutorialOverlay.classList.remove("hidden");
+  resizeTutorialCanvas();
+  drawTutorial();
+}
+
+function resizeTutorialCanvas() {
+  tutorialCanvas.width = CONFIG.tutorialWidth;
+  tutorialCanvas.height = CONFIG.tutorialHeight;
+}
+
+function drawTutorial() {
+  if (!tutorialActive) return;
+  tctx.clearRect(0, 0, tutorialCanvas.width, tutorialCanvas.height);
+
+  // ターゲット
+  tctx.save();
+  tctx.strokeStyle = "#00ffff";
+  tctx.lineWidth = 4;
+  tctx.beginPath();
+  tctx.arc(tutorialTarget.x, tutorialTarget.y, tutorialTarget.r, 0, Math.PI * 2);
+  tctx.stroke();
+  tctx.restore();
+
+  requestAnimationFrame(drawTutorial);
+}
+
+tutorialCanvas.addEventListener("click", (e) => {
+  if (!tutorialActive || tutorialCleared) return;
+  const rect = tutorialCanvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  const dx = x - tutorialTarget.x;
+  const dy = y - tutorialTarget.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+
+  if (dist < tutorialTarget.r) {
+    tutorialCleared = true;
+    tctx.fillStyle = "rgba(0,255,0,0.3)";
+    tctx.beginPath();
+    tctx.arc(tutorialTarget.x, tutorialTarget.y, tutorialTarget.r + CONFIG.tutorialHitFlashGrow, 0, Math.PI * 2);
+    tctx.fill();
+
+    // 規定ディレイ後にメインゲーム開始
+    setTimeout(() => {
+      tutorialOverlay.classList.add("hidden");
+      tutorialActive = false;
+      beginMainGame();
+    }, CONFIG.tutorialSuccessDelayMs);
+  }
+});
+
+function beginMainGame() {
   running = true;
   gameState.playing = true;
   statePanel.style.display = 'none';
@@ -154,6 +344,43 @@ function gameOver() {
 function updateUI() {
   scorePanel.textContent = `Score: ${gameState.score}`;
   highPanel.textContent = `High: ${gameState.high}`;
+}
+
+/* =========================
+   タイムバーと赤点滅アニメーション描画
+   ========================= */
+let flashTimer = 0;
+function drawTimerOverlay(dt) {
+  const remaining = Math.max(0, CONFIG.timerDuration - gameTimer);
+  const barWidth = (remaining / CONFIG.timerDuration) * CONFIG.canvasWidth;
+
+  // タイムバー
+  ctx.save();
+  ctx.fillStyle = CONFIG.timerBarColor;
+  ctx.fillRect(0, CONFIG.canvasHeight - CONFIG.timerBarHeight - CONFIG.timerBarMargin, barWidth, CONFIG.timerBarHeight);
+  ctx.restore();
+
+  // 5秒前から警告演出
+  if (remaining <= CONFIG.timerWarningTime) {
+    flashTimer += dt;
+    const flashPhase = Math.sin((flashTimer / CONFIG.timerFlashDuration) * Math.PI);
+
+    // 画面赤点滅
+    ctx.save();
+    ctx.globalAlpha = flashPhase * 0.6;
+    ctx.fillStyle = CONFIG.timerFlashColor;
+    ctx.fillRect(0, 0, CONFIG.canvasWidth, CONFIG.canvasHeight);
+    ctx.restore();
+
+    // 残り秒数表示（フェードイン/アウト）
+    ctx.save();
+    ctx.globalAlpha = 0.5 + 0.5 * flashPhase;
+    ctx.font = CONFIG.timerTextFont;
+    ctx.fillStyle = CONFIG.timerTextColor;
+    ctx.textAlign = "center";
+    ctx.fillText(Math.ceil(remaining), CONFIG.canvasWidth / 2, CONFIG.canvasHeight - 50);
+    ctx.restore();
+  }
 }
 
 /* =========================
@@ -205,7 +432,7 @@ CONFIG.bulletGravity = CONFIG.bulletGravity ?? 2200; // 調整可能（上部CON
 
 // 発射位置（プレイヤー）を決める関数（スクリーン→仮想座標を使う）
 function getPlayerFirePos(){
-  return { x: gameState.playerX, y: CONFIG.canvasHeight - 120 };
+  return { x: gameState.playerX, y: CONFIG.canvasHeight - CONFIG.fireOffsetFromBottom };
 }
 
 // 新しい shoot(): 目標（mouse or gamepad）に向けて放物線を描けるように初速を計算して発射
@@ -367,6 +594,7 @@ function explodeEnemy(e) {
       });
     }
     gameState.score += CONFIG.scorePerEnemy;
+    checkMilestone();
   }
 }
 
@@ -426,7 +654,7 @@ function loop(ts) {
   // ゲーム時間の進行
   if (gameState.playing && !gameEnded) {
     gameTimer += dt;
-    if (gameTimer >= 60) { // 60秒で終了
+    if (gameTimer >= CONFIG.timerDuration) {
       endGameSequence();
       return;
     }
@@ -554,7 +782,10 @@ function loop(ts) {
       if (hitTest(b, e)) {
         b.alive = false;
         explodeEnemy(e);
-        if (!e.penalty) gameState.score += e.score ?? CONFIG.scorePerEnemy;
+        if (!e.penalty) {
+          gameState.score += e.score ?? CONFIG.scorePerEnemy;
+          checkMilestone();
+        }
         break;
       }
     }
@@ -562,6 +793,9 @@ function loop(ts) {
 
   // 描画
   draw();
+
+  // タイムバーと残り時間の表示
+  drawTimerOverlay(dt);
 
   // 次フレーム
   if (running) requestAnimationFrame(loop);
@@ -587,8 +821,53 @@ function endGameSequence() {
       finalScoreTextEl.textContent = `合計スコア：${gameState.score}`;
       finalScoreTextEl.classList.add('visible');
       btnMainMenu.classList.add('visible');
+      // 最新スコアを保存 → 再読み込み → 表示
+      saveHigh();
+      setTimeout(() => {
+        loadHigh();
+        showRanking();
+      }, 500);
     }, 1500);
   }, 2500);
+}
+
+/* =========================
+   ランキング表示（overlay内にHTMLで）
+   ========================= */
+function showRanking() {
+  // 最新ランキングをロード
+  loadHigh();
+  const rankings = Array.isArray(gameState.rankings) ? gameState.rankings : [];
+
+  // 既存ランキング要素を削除
+  const old = document.getElementById("rankingDisplay");
+  if (old) old.remove();
+
+  // ランキング用のdivを作成
+  const div = document.createElement("div");
+  div.id = "rankingDisplay";
+  div.style.textAlign = "center";
+  div.style.marginTop = "30px";
+  div.style.color = "#fff";
+
+  // タイトル
+  let html = `<h2 style="color:white;margin-bottom:10px;">🏆 RANKING 🏆</h2>`;
+
+  if (rankings.length === 0) {
+    html += `<p style="font-size:18px;opacity:0.7;">まだスコアが記録されていません</p>`;
+  } else {
+    html += `<ol style="list-style:none;padding:0;margin:0;">`;
+    rankings.forEach((r, i) => {
+      const color = (r.score === gameState.score) ? CONFIG.newRecordColor : CONFIG.rankColor;
+      html += `<li style="font-size:20px;margin:6px 0;color:${color};">${i + 1}. ${r.name} — ${r.score}</li>`;
+    });
+    html += `</ol>`;
+  }
+
+  div.innerHTML = html;
+
+  // overlayの一番下（main menuボタンの下）に追加
+  overlay.appendChild(div);
 }
 
 // メインメニューに戻る
@@ -678,18 +957,11 @@ function draw() {
       }
       continue;
     }
-    // alive: 本体を描く（四角の的っぽく）
+    // alive: 画像で描画
     ctx.save();
     ctx.globalAlpha = e.alpha ?? 1;
-    // body（ペナルティ敵なら紫）
-    ctx.fillStyle = e.penalty ? CONFIG.penaltyColor : "#ff6b6b";
-    ctx.fillRect(e.x - e.w/2, e.y - e.h/2, e.w, e.h);
-    // 顔（装飾）
-    ctx.fillStyle = "#fff6";
-    ctx.fillRect(e.x - e.w/4, e.y - e.h/6, e.w/2, e.h/3);
-    // 少し影で重量感
-    ctx.fillStyle = "rgba(0,0,0,0.18)";
-    ctx.fillRect(e.x - e.w/2, e.y + e.h/2 - 6, e.w, 6);
+    const img = e.penalty ? penaltyImage : enemyImage;
+    ctx.drawImage(img, e.x - e.w/2, e.y - e.h/2, e.w, e.h);
     ctx.restore();
 
     // スコア表示（敵の上部に）
@@ -701,10 +973,6 @@ function draw() {
     ctx.fillText(`+${e.score}`, e.x, e.y - e.h/2 - 8);
     ctx.restore();
   }
-
-  // --- プレイヤー（そのまま） ---
-  ctx.fillStyle = "#6bf";
-  ctx.fillRect(gameState.playerX - CONFIG.playerWidth/2, CONFIG.canvasHeight - 60, CONFIG.playerWidth, CONFIG.playerHeight);
 
   // --- 照準マーカー（マウス or gamepad） ---
   ctx.save();

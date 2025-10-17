@@ -1,5 +1,4 @@
 <!doctype html>
-
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
@@ -12,7 +11,7 @@
   <div id="gameWrap">
     <canvas id="screen"></canvas>
 
-    <div class="ui">
+    <div class="topUI">
       <div class="panel" id="scorePanel">Score: 0</div>
       <div class="panel" id="highPanel">High: 0</div>
     </div>
@@ -23,6 +22,14 @@
       <button id="btnRestart">Restart</button>
       <button id="btnMute">Mute</button>
     </div>
+
+    <!-- === 準備ゲーム(チュートリアル)用オーバーレイ === -->
+    <div id="tutorialOverlay" class="hidden">
+      <div id="tutorialMessage">🎯 照準を合わせてクリック！</div>
+      <canvas id="tutorialCanvas"></canvas>
+    </div>
+    <!-- 達成トースト（右上） -->
+    <div id="milestoneToast" class="milestone hidden"></div>
   <div id="gameOverOverlay" class="hidden">
     <div id="gameOverText">ゲーム終了</div>
     <div id="finalScoreText"></div>
@@ -33,4 +40,3 @@
   <script src="script.js"></script>
 </body>
 </html>
-
